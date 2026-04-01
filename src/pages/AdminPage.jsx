@@ -37,9 +37,10 @@ export function AdminPage() {
     setError('')
 
     const tempPassword = Math.random().toString(36).slice(-10) + 'A1!'
-    const { data: authData, error: authError } = await supabase.auth.admin
-      ? await supabase.auth.admin.inviteUserByEmail(form.email)
-      : await supabase.auth.signUp({ email: form.email, password: tempPassword })
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: tempPassword,
+    })
 
     if (authError && !authError.message.includes('already registered')) {
       setError('Erreur : ' + authError.message)

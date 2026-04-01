@@ -145,12 +145,12 @@ export function DashboardPage() {
           <div className="grid grid-cols-2 gap-4 mb-5">
             <Card neon className="flex flex-col items-center justify-center py-5">
               <p className="text-gray-500 text-xs mb-1">Total TTC</p>
-              <p className="text-3xl font-bold neon-green">{fmt(totalTTC)}</p>
+              <p className="text-xl sm:text-2xl font-bold neon-green leading-tight text-center">{fmt(totalTTC)}</p>
               <p className="text-gray-500 text-xs mt-1">TTC</p>
             </Card>
             <Card neon className="flex flex-col items-center justify-center py-5">
               <p className="text-gray-500 text-xs mb-1">Total HT</p>
-              <p className="text-2xl font-bold neon-blue">{fmt(totalHT)}</p>
+              <p className="text-xl sm:text-2xl font-bold neon-blue leading-tight text-center">{fmt(totalHT)}</p>
               <p className="text-gray-500 text-xs mt-1">HT</p>
             </Card>
           </div>
