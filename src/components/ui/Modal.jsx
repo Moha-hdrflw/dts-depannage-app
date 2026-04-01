@@ -28,7 +28,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
             <X size={20} />
           </button>
         </div>
-        <div className="p-4 pb-8 sm:pb-4">
+        <div className="p-4 pb-20 sm:pb-4">
           {children}
         </div>
       </div>
