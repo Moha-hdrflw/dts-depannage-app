@@ -42,7 +42,27 @@ export function AdminPage() {
       password: tempPassword,
     })
 
-    if (authError && !authError.message.includes('already registered')) {
+    // Email déjà existant dans auth → envoyer un reset de mot de passe
+    if (authError?.message?.includes('already registered') || authData?.user?.identities?.length === 0) {
+      await supabase.auth.resetPasswordForEmail(form.email)
+      // Mettre à jour le profil existant dans public.users
+      await supabase.from('users').upsert([{
+        email: form.email,
+        prenom: form.prenom.trim(),
+        nom: form.nom.trim(),
+        role: form.role,
+        actif: true,
+      }], { onConflict: 'email' })
+      setCreating(false)
+      setShowModal(false)
+      setForm({ email: '', prenom: '', nom: '', role: 'technicien' })
+      setSuccess(`Email de connexion renvoyé à ${form.email}`)
+      loadUsers()
+      setTimeout(() => setSuccess(''), 6000)
+      return
+    }
+
+    if (authError) {
       setError('Erreur : ' + authError.message)
       setCreating(false)
       return
@@ -50,10 +70,7 @@ export function AdminPage() {
 
     const userId = authData?.user?.id
     if (userId) {
-      // Attendre que le trigger ait créé la ligne dans public.users
       await new Promise(r => setTimeout(r, 600))
-
-      // Update explicite pour écraser le rôle par défaut du trigger
       const { error: updateErr } = await supabase.from('users').update({
         prenom: form.prenom.trim(),
         nom: form.nom.trim(),
@@ -62,7 +79,6 @@ export function AdminPage() {
       }).eq('id', userId)
 
       if (updateErr) {
-        // Fallback : upsert si l'update échoue (ligne pas encore créée)
         await supabase.from('users').upsert([{
           id: userId,
           email: form.email,
@@ -77,9 +93,9 @@ export function AdminPage() {
     setCreating(false)
     setShowModal(false)
     setForm({ email: '', prenom: '', nom: '', role: 'technicien' })
-    setSuccess(`Compte créé — rôle : ${form.role}`)
+    setSuccess(`Compte créé — un email a été envoyé à ${form.email}`)
     loadUsers()
-    setTimeout(() => setSuccess(''), 5000)
+    setTimeout(() => setSuccess(''), 6000)
   }
 
   async function toggleActif(user) {
