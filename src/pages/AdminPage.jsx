@@ -50,20 +50,34 @@ export function AdminPage() {
 
     const userId = authData?.user?.id
     if (userId) {
-      await supabase.from('users').upsert([{
-        id: userId,
-        email: form.email,
+      // Attendre que le trigger ait créé la ligne dans public.users
+      await new Promise(r => setTimeout(r, 600))
+
+      // Update explicite pour écraser le rôle par défaut du trigger
+      const { error: updateErr } = await supabase.from('users').update({
         prenom: form.prenom.trim(),
         nom: form.nom.trim(),
         role: form.role,
         actif: true,
-      }])
+      }).eq('id', userId)
+
+      if (updateErr) {
+        // Fallback : upsert si l'update échoue (ligne pas encore créée)
+        await supabase.from('users').upsert([{
+          id: userId,
+          email: form.email,
+          prenom: form.prenom.trim(),
+          nom: form.nom.trim(),
+          role: form.role,
+          actif: true,
+        }], { onConflict: 'id' })
+      }
     }
 
     setCreating(false)
     setShowModal(false)
     setForm({ email: '', prenom: '', nom: '', role: 'technicien' })
-    setSuccess(`Compte créé pour ${form.prenom} ${form.nom}`)
+    setSuccess(`Compte créé — rôle : ${form.role}`)
     loadUsers()
     setTimeout(() => setSuccess(''), 5000)
   }
