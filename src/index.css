@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background-color: #060d16;
+  color: #e2e8f0;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { min-height: 100vh; }
+
+/* ════════════════════════════════════
+   FOND NÉON VIVANT
+════════════════════════════════════ */
+.neon-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Orbe vert haut-gauche — intense */
+.neon-bg .orb1 {
+  position: absolute;
+  top: -200px; left: -200px;
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, rgba(184,212,0,0.22) 0%, rgba(184,212,0,0.09) 35%, rgba(184,212,0,0.03) 60%, transparent 75%);
+  border-radius: 50%;
+  animation: orbFloat1 14s ease-in-out infinite;
+}
+/* Orbe bleu bas-droite — intense */
+.neon-bg .orb2 {
+  position: absolute;
+  bottom: -220px; right: -180px;
+  width: 850px; height: 850px;
+  background: radial-gradient(circle, rgba(0,140,255,0.24) 0%, rgba(74,179,255,0.10) 35%, rgba(0,120,255,0.04) 60%, transparent 75%);
+  border-radius: 50%;
+  animation: orbFloat2 17s ease-in-out infinite;
+}
+/* Orbe bleu électrique milieu */
+.neon-bg .orb3 {
+  position: absolute;
+  top: 30%; left: 35%;
+  width: 700px; height: 420px;
+  background: radial-gradient(ellipse, rgba(0,180,255,0.13) 0%, rgba(0,140,255,0.05) 45%, transparent 70%);
+  border-radius: 50%;
+  animation: orbFloat3 20s ease-in-out infinite;
+}
+/* Orbe vert bas-gauche */
+.neon-bg .orb4 {
+  position: absolute;
+  bottom: 5%; left: -120px;
+  width: 550px; height: 550px;
+  background: radial-gradient(circle, rgba(184,212,0,0.16) 0%, rgba(184,212,0,0.06) 40%, transparent 70%);
+  border-radius: 50%;
+  animation: orbFloat4 11s ease-in-out infinite;
+}
+/* Orbe bleu supplémentaire haut-droite */
+.neon-bg .orb5 {
+  position: absolute;
+  top: -100px; right: -100px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(0,160,255,0.18) 0%, rgba(74,179,255,0.07) 40%, transparent 70%);
+  border-radius: 50%;
+  animation: orbFloat1 18s ease-in-out infinite reverse;
+}
+/* Orbe vert centre-droite */
+.neon-bg .orb6 {
+  position: absolute;
+  top: 45%; right: 5%;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(184,212,0,0.12) 0%, transparent 65%);
+  border-radius: 50%;
+  animation: orbFloat4 15s ease-in-out infinite reverse;
+}
+
+/* Lignes néon horizontales */
+.neon-bg .line1 {
+  position: absolute;
+  top: 28%;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(74,179,255,0.25) 30%, rgba(184,212,0,0.20) 60%, rgba(74,179,255,0.15) 80%, transparent 100%);
+  animation: linePulse 6s ease-in-out infinite;
+}
+.neon-bg .line2 {
+  position: absolute;
+  top: 68%;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(184,212,0,0.20) 25%, rgba(74,179,255,0.25) 65%, rgba(184,212,0,0.12) 85%, transparent 100%);
+  animation: linePulse 8s ease-in-out infinite reverse;
+}
+/* Ligne verticale subtile */
+.neon-bg .line3 {
+  position: absolute;
+  left: 20%;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent 0%, rgba(184,212,0,0.10) 30%, rgba(74,179,255,0.08) 70%, transparent 100%);
+  animation: linePulse 10s ease-in-out infinite;
+}
+.neon-bg .line4 {
+  position: absolute;
+  right: 20%;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent 0%, rgba(74,179,255,0.10) 30%, rgba(184,212,0,0.08) 70%, transparent 100%);
+  animation: linePulse 12s ease-in-out infinite reverse;
+}
+
+@keyframes orbFloat1 {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33% { transform: translate(60px,80px) scale(1.07); }
+  66% { transform: translate(25px,45px) scale(0.96); }
+}
+@keyframes orbFloat2 {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33% { transform: translate(-70px,-60px) scale(1.10); }
+  66% { transform: translate(-35px,-25px) scale(0.94); }
+}
+@keyframes orbFloat3 {
+  0%,100% { transform: translate(0,0) scaleX(1); }
+  50% { transform: translate(50px,25px) scaleX(1.25); }
+}
+@keyframes orbFloat4 {
+  0%,100% { transform: translate(0,0); }
+  50% { transform: translate(40px,-50px); }
+}
+@keyframes linePulse {
+  0%,100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ════════════════════════════════════
+   NEON UTILITIES
+════════════════════════════════════ */
+.neon-green {
+  color: #b8d400;
+  text-shadow: 0 0 8px rgba(184,212,0,0.9), 0 0 20px rgba(184,212,0,0.5);
+}
+.neon-blue {
+  color: #4ab3ff;
+  text-shadow: 0 0 8px rgba(74,179,255,0.9), 0 0 20px rgba(74,179,255,0.5);
+}
+.neon-btn {
+  box-shadow: 0 0 16px rgba(184,212,0,0.4), 0 0 32px rgba(184,212,0,0.18);
+  transition: box-shadow 0.2s;
+}
+.neon-btn:hover {
+  box-shadow: 0 0 24px rgba(184,212,0,0.65), 0 0 50px rgba(184,212,0,0.3);
+}
+.neon-card {
+  border: 1px solid rgba(184,212,0,0.12);
+  box-shadow: 0 0 20px rgba(184,212,0,0.03), inset 0 0 30px rgba(74,179,255,0.02);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.neon-card:hover {
+  border-color: rgba(184,212,0,0.22);
+  box-shadow: 0 0 28px rgba(184,212,0,0.07), 0 0 0 1px rgba(74,179,255,0.05);
+}
+
+/* Badge glow */
+.badge-glow-green { box-shadow: 0 0 10px rgba(74,222,128,0.55); }
+.badge-glow-blue  { box-shadow: 0 0 10px rgba(96,165,250,0.55); }
+.badge-glow-red   { box-shadow: 0 0 10px rgba(248,113,113,0.45); }
+
+/* Clickable badge feedback */
+.badge-clickable {
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.badge-clickable:hover  { opacity: 0.85; transform: scale(1.05); }
+.badge-clickable:active { opacity: 0.7;  transform: scale(0.96); }
+
+/* ── Dot animé ── */
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(184,212,0,0.9); }
+  50%      { opacity: 0.5; transform: scale(0.75); box-shadow: 0 0 12px rgba(184,212,0,1); }
+}
+.dot-live {
+  width: 8px; height: 8px;
+  background: #b8d400;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* Header */
+.header-neon {
+  box-shadow: 0 1px 0 rgba(184,212,0,0.18), 0 2px 15px rgba(184,212,0,0.06);
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #1a2d45 transparent;
+  }
+}
