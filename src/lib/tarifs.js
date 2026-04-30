@@ -26,6 +26,16 @@ export function calculerHT(ttc, type_client) {
   }
 }
 
+export function calculerTTC(ht, type_client) {
+  const tva = TVA[type_client] ?? TVA.particulier
+  const ttc = ht * (1 + tva)
+  return {
+    montant_ht: Math.round(ht * 100) / 100,
+    tva_taux: Math.round(tva * 100),
+    montant_ttc: Math.round(ttc * 100) / 100,
+  }
+}
+
 export function fmtEuro(n) {
   if (n == null || isNaN(n)) return '—'
   return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
