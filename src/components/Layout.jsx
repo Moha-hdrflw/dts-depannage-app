@@ -1,13 +1,109 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { LayoutDashboard, Users, PlusCircle, LogOut, Settings, Menu, X, ClipboardList } from 'lucide-react'
-import { useState } from 'react'
+import { LayoutDashboard, Users, PlusCircle, LogOut, Settings, Menu, X, ClipboardList, WifiOff, RefreshCw, CheckCircle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { getQueue, removeFromQueue, getQueueCount } from '../lib/offlineQueue'
+import { supabase } from '../lib/supabase'
+import { calculerTTC } from '../lib/tarifs'
 
 export function Layout({ children }) {
   const { profile, signOut, isAdmin } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [queueCount, setQueueCount] = useState(getQueueCount())
+  const [syncing, setSyncing] = useState(false)
+  const [syncSuccess, setSyncSuccess] = useState(false)
+  const isSyncing = useRef(false)
+
+  // ── Synchronisation automatique au retour du réseau ──
+  async function syncQueue() {
+    if (isSyncing.current) return
+    const queue = getQueue()
+    if (!queue.length) return
+
+    isSyncing.current = true
+    setSyncing(true)
+
+    for (const item of queue) {
+      try {
+        let clientId = item.selectedClient?.id
+
+        // Créer le client s'il était nouveau
+        if (!clientId && item.clientForm) {
+          const isPro = item.clientForm.type_client === 'pro'
+          const { data, error } = await supabase.from('clients').insert([{
+            nom:          isPro ? item.clientForm.nom_societe?.trim() : item.clientForm.nom?.trim(),
+            prenom:       isPro ? '' : item.clientForm.prenom?.trim(),
+            telephone:    item.clientForm.telephone?.trim(),
+            adresse:      item.clientForm.adresse?.trim() || null,
+            code_postal:  item.clientForm.code_postal?.trim() || null,
+            ville:        item.clientForm.ville?.trim() || null,
+            type_client:  item.clientForm.type_client,
+            date_creation: new Date().toISOString(),
+          }]).select().single()
+          if (error) continue
+          clientId = data.id
+        }
+
+        if (!clientId) continue
+
+        const htVal = parseFloat(item.form.montant_ht_saisi) || 0
+        const { montant_ht, tva_taux, montant_ttc } = item.calc || calculerTTC(htVal, item.typeClient)
+
+        const { error: intErr } = await supabase.from('interventions').insert([{
+          client_id:        clientId,
+          technicien_id:    item.technicienId,
+          technicien_nom:   item.technicienNom,
+          date:             item.dateIntervention,
+          heure:            item.heureIntervention,
+          type_panne:       item.form.type_panne,
+          type_panne_autre: item.form.type_panne === 'Autre' ? item.form.type_panne_autre : null,
+          creneau:          item.form.creneau,
+          duree_heures:     parseFloat(item.form.duree_heures),
+          mise_en_securite: false,
+          montant_ht,
+          tva_taux,
+          montant_ttc,
+          mode_paiement:    item.form.mode_paiement,
+          notes_technicien: item.form.notes_technicien,
+          facture_editee: false, facture_envoyee: false,
+          sms_avis_envoye: false, sms_j1_envoye: false,
+        }])
+
+        if (!intErr) {
+          removeFromQueue(item._queueId)
+        }
+      } catch {
+        // On garde l'item dans la queue pour réessayer plus tard
+      }
+    }
+
+    isSyncing.current = false
+    setSyncing(false)
+    const remaining = getQueueCount()
+    setQueueCount(remaining)
+    if (remaining === 0) {
+      setSyncSuccess(true)
+      setTimeout(() => setSyncSuccess(false), 4000)
+    }
+  }
+
+  useEffect(() => {
+    // Actualiser le compteur à chaque changement de route
+    setQueueCount(getQueueCount())
+  }, [location.pathname])
+
+  useEffect(() => {
+    function onOnline() {
+      setQueueCount(getQueueCount())
+      syncQueue()
+    }
+    window.addEventListener('online', onOnline)
+    // Tenter une sync au chargement si on est déjà en ligne
+    if (navigator.onLine && getQueueCount() > 0) syncQueue()
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
 
   async function handleSignOut() {
     await signOut()
@@ -37,6 +133,33 @@ export function Layout({ children }) {
         <div className="line3" />
         <div className="line4" />
       </div>
+
+      {/* Bandeau sync hors-ligne */}
+      {(queueCount > 0 || syncing || syncSuccess) && (
+        <div className={`relative z-50 px-4 py-2 text-xs flex items-center justify-center gap-2 font-medium transition-colors
+          ${syncSuccess
+            ? 'bg-green-500/15 border-b border-green-500/30 text-green-400'
+            : syncing
+              ? 'bg-accent/10 border-b border-accent/20 text-accent'
+              : 'bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-400'}`}>
+          {syncSuccess ? (
+            <><CheckCircle size={13} /> Interventions synchronisées avec succès !</>
+          ) : syncing ? (
+            <><RefreshCw size={13} className="animate-spin" /> Synchronisation en cours…</>
+          ) : (
+            <>
+              <WifiOff size={13} />
+              {queueCount} intervention{queueCount > 1 ? 's' : ''} en attente de synchronisation
+              {navigator.onLine && (
+                <button onClick={syncQueue}
+                  className="ml-2 underline hover:no-underline">
+                  Synchroniser maintenant
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Top bar */}
       <header className="relative z-40 bg-dark-800/90 backdrop-blur-md border-b border-dark-600 header-neon px-4 py-3 flex items-center justify-between sticky top-0">
@@ -89,6 +212,11 @@ export function Layout({ children }) {
                   ? 'bg-accent/10 text-accent font-medium border border-accent/20 neon-btn'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-dark-700'}`}>
               <Icon size={18} />{label}
+              {to === '/intervention/nouveau' && queueCount > 0 && (
+                <span className="ml-auto bg-yellow-500 text-dark-900 text-xs font-bold rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
+                  {queueCount}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
@@ -103,9 +231,15 @@ export function Layout({ children }) {
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-dark-800/90 backdrop-blur-md border-t border-dark-600 flex z-40">
         {navItems.map(({ to, icon: Icon, label }) => (
           <Link key={to} to={to}
-            className={`flex-1 flex flex-col items-center py-2.5 gap-1 text-xs transition-colors
+            className={`flex-1 flex flex-col items-center py-2.5 gap-1 text-xs transition-colors relative
               ${location.pathname.startsWith(to) ? 'text-accent' : 'text-gray-500'}`}>
-            <Icon size={20} />{label}
+            <Icon size={20} />
+            {label}
+            {to === '/intervention/nouveau' && queueCount > 0 && (
+              <span className="absolute top-1.5 right-[calc(50%-18px)] bg-yellow-500 text-dark-900 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                {queueCount}
+              </span>
+            )}
           </Link>
         ))}
       </nav>
