@@ -7,10 +7,10 @@ import { Button } from '../components/ui/Button'
 import { Card, MontantDisplay } from '../components/ui/Card'
 import { Modal } from '../components/ui/Modal'
 import { Input, Select, Textarea } from '../components/ui/Input'
-import { ArrowLeft, Plus, Upload, X, Pencil, Trash2, Clock } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, X, Pencil, Trash2, Clock, UserPen, Building2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { calculerHT, TYPES_PANNE, DUREES, MODES_PAIEMENT, fmtHeure } from '../lib/tarifs'
+import { calculerHT, calculerTTC, TYPES_PANNE, DUREES, MODES_PAIEMENT, fmtHeure } from '../lib/tarifs'
 
 const TABS = ['Interventions', 'Notes & Facturation', 'Photos']
 
@@ -32,6 +32,14 @@ export function ClientDetailPage() {
   const [editInterv, setEditInterv] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
+
+  // Edit client
+  const [editClientOpen, setEditClientOpen] = useState(false)
+  const [editClientForm, setEditClientForm] = useState({})
+  const [savingClient, setSavingClient] = useState(false)
+
+  // Delete photo
+  const [deletingPhoto, setDeletingPhoto] = useState(null)
 
   useEffect(() => { loadAll() }, [id])
 
@@ -84,7 +92,6 @@ export function ClientDetailPage() {
   // ── Suppression client (admin) ──
   async function deleteClient() {
     if (!confirm(`Supprimer le client ${client.prenom} ${client.nom} et TOUTES ses interventions ? Action irréversible.`)) return
-    // Photos → interventions → client
     const intIds = interventions.map(i => i.id)
     if (intIds.length) {
       await supabase.from('photos').delete().in('intervention_id', intIds)
@@ -95,33 +102,72 @@ export function ClientDetailPage() {
     navigate('/clients')
   }
 
+  // ── Édition client ──
+  function openEditClient() {
+    setEditClientForm({
+      type_client: client.type_client || 'particulier',
+      prenom:      client.prenom || '',
+      nom:         client.nom || '',
+      nom_societe: client.type_client === 'pro' ? (client.nom || '') : '',
+      telephone:   client.telephone || '',
+      email:       client.email || '',
+      adresse:     client.adresse || '',
+      code_postal: client.code_postal || '',
+      ville:       client.ville || '',
+    })
+    setEditClientOpen(true)
+  }
+
+  async function saveEditClient() {
+    setSavingClient(true)
+    const isPro = editClientForm.type_client === 'pro'
+    const updates = {
+      type_client:  editClientForm.type_client,
+      nom:          isPro ? editClientForm.nom_societe.trim() : editClientForm.nom.trim(),
+      prenom:       isPro ? '' : editClientForm.prenom.trim(),
+      telephone:    editClientForm.telephone.trim(),
+      email:        editClientForm.email.trim() || null,
+      adresse:      editClientForm.adresse.trim() || null,
+      code_postal:  editClientForm.code_postal.trim() || null,
+      ville:        editClientForm.ville.trim() || null,
+    }
+    const { error } = await supabase.from('clients').update(updates).eq('id', id)
+    if (error) {
+      alert('Erreur : ' + error.message)
+    } else {
+      setClient(prev => ({ ...prev, ...updates }))
+      setEditClientOpen(false)
+    }
+    setSavingClient(false)
+  }
+
   // ── Édition intervention (admin) ──
   function openEdit(interv) {
     setEditInterv(interv)
     setEditForm({
-      type_panne: interv.type_panne,
+      type_panne:       interv.type_panne,
       type_panne_autre: interv.type_panne_autre || '',
-      creneau: interv.creneau,
-      duree_heures: interv.duree_heures || 1,
-      montant_ttc_saisi: interv.montant_ttc || '',
-      mode_paiement: interv.mode_paiement,
+      creneau:          interv.creneau,
+      duree_heures:     interv.duree_heures || 1,
+      montant_ht_saisi: interv.montant_ht || '',
+      mode_paiement:    interv.mode_paiement,
       notes_technicien: interv.notes_technicien || '',
     })
   }
 
   async function saveEdit() {
     setSaving(true)
-    const ttcVal = parseFloat(editForm.montant_ttc_saisi) || 0
-    const { montant_ht, tva_taux, montant_ttc } = calculerHT(ttcVal, client.type_client)
+    const htVal = parseFloat(editForm.montant_ht_saisi) || 0
+    const { montant_ht, tva_taux, montant_ttc } = calculerTTC(htVal, client.type_client)
     const updates = {
-      type_panne: editForm.type_panne,
+      type_panne:       editForm.type_panne,
       type_panne_autre: editForm.type_panne === 'Autre' ? editForm.type_panne_autre : null,
-      creneau: editForm.creneau,
-      duree_heures: parseFloat(editForm.duree_heures),
+      creneau:          editForm.creneau,
+      duree_heures:     parseFloat(editForm.duree_heures),
       montant_ht,
       tva_taux,
       montant_ttc,
-      mode_paiement: editForm.mode_paiement,
+      mode_paiement:    editForm.mode_paiement,
       notes_technicien: editForm.notes_technicien,
     }
     await supabase.from('interventions').update(updates).eq('id', editInterv.id)
@@ -130,6 +176,7 @@ export function ClientDetailPage() {
     setEditInterv(null)
   }
 
+  // ── Upload photo ──
   async function handlePhotoUpload(e, interventionId) {
     const file = e.target.files[0]
     if (!file) return
@@ -141,29 +188,47 @@ export function ClientDetailPage() {
       .from('photos')
       .upload(path, file, { upsert: true })
     if (upErr) {
-      alert(`Erreur upload : ${upErr.message}\n\nVérifiez que le bucket "photos" existe dans Supabase Storage et qu'il est public.`)
+      alert(`Erreur upload : ${upErr.message}`)
       setUploading(false)
       return
     }
     const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path)
-    const { error: insErr } = await supabase.from('photos').insert([{
-      client_id: id,
+    await supabase.from('photos').insert([{
+      client_id:       id,
       intervention_id: interventionId || null,
-      url: urlData.publicUrl,
-      type: typeLabel,
-      date_upload: new Date().toISOString(),
+      url:             urlData.publicUrl,
+      type:            typeLabel,
+      date_upload:     new Date().toISOString(),
     }])
-    if (insErr) {
-      alert(`Erreur sauvegarde photo : ${insErr.message}`)
-    }
     setUploading(false)
     loadAll()
+  }
+
+  // ── Suppression photo ──
+  async function deletePhoto(photo) {
+    if (!confirm('Supprimer cette photo ?')) return
+    setDeletingPhoto(photo.id)
+    try {
+      // Extraire le path depuis l'URL publique : tout ce qui est après "/photos/"
+      const urlParts = photo.url.split('/photos/')
+      if (urlParts.length > 1) {
+        const storagePath = decodeURIComponent(urlParts[1].split('?')[0])
+        await supabase.storage.from('photos').remove([storagePath])
+      }
+      await supabase.from('photos').delete().eq('id', photo.id)
+      setPhotos(prev => prev.filter(p => p.id !== photo.id))
+    } catch (err) {
+      alert('Erreur suppression : ' + err.message)
+    }
+    setDeletingPhoto(null)
   }
 
   if (loading) return <div className="text-gray-400 p-8 text-center">Chargement...</div>
   if (!client) return <div className="text-gray-400 p-8 text-center">Client introuvable</div>
 
   const latestIntervention = interventions[0]
+  const isPro = client.type_client === 'pro'
+  const clientNom = isPro ? client.nom : `${client.prenom || ''} ${client.nom || ''}`.trim()
 
   return (
     <div className="max-w-2xl mx-auto pb-24 sm:pb-4">
@@ -171,23 +236,31 @@ export function ClientDetailPage() {
         <ArrowLeft size={16} /> Retour
       </button>
 
-      {/* Header client */}
+      {/* ── Header client ── */}
       <div className="bg-dark-800 neon-card rounded-xl p-4 mb-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold neon-green">{client.prenom} {client.nom}</h1>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold neon-green truncate">{clientNom}</h1>
+              {/* Bouton modifier client */}
+              <button onClick={openEditClient}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-accent transition-colors border border-dark-500 hover:border-accent/40 rounded-md px-2 py-0.5">
+                <UserPen size={12} /> Modifier
+              </button>
+            </div>
             <p className="text-gray-400 text-sm mt-0.5">{client.telephone}</p>
+            {client.email && <p className="text-gray-500 text-sm">{client.email}</p>}
             {client.adresse && <p className="text-gray-500 text-sm">{client.adresse}</p>}
             {(client.code_postal || client.ville) && (
               <p className="text-gray-500 text-sm">
                 {[client.code_postal, client.ville].filter(Boolean).join(' ')}
               </p>
             )}
-            <Badge color={client.type_client === 'pro' ? 'blue' : 'gray'} className="mt-2">
-              {client.type_client === 'pro' ? 'Professionnel — TVA 20%' : 'Particulier — TVA 10%'}
+            <Badge color={isPro ? 'blue' : 'purple'} className="mt-2">
+              {isPro ? 'Professionnel — TVA 20%' : 'Particulier — TVA 10%'}
             </Badge>
           </div>
-          <div className="flex flex-col gap-2 items-end">
+          <div className="flex flex-col gap-2 items-end flex-shrink-0">
             <Button onClick={() => navigate(`/intervention/nouveau?client_id=${id}`)} size="sm">
               <Plus size={14} /> Intervention
             </Button>
@@ -208,6 +281,9 @@ export function ClientDetailPage() {
             className={`flex-1 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px
               ${activeTab === i ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>
             {tab}
+            {i === 2 && photos.length > 0 && (
+              <span className="ml-1 text-xs text-gray-600">({photos.length})</span>
+            )}
           </button>
         ))}
       </div>
@@ -220,7 +296,6 @@ export function ClientDetailPage() {
             <Card key={interv.id} neon>
               <div className="flex justify-between items-start">
                 <div className="flex-1 min-w-0">
-                  {/* Date + heure badge */}
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="inline-flex items-center gap-1 bg-dark-700 border border-dark-500 rounded-md px-2 py-0.5 text-xs text-gray-300 font-medium">
                       <Clock size={11} className="text-accent" />
@@ -261,7 +336,6 @@ export function ClientDetailPage() {
           {interventions.length === 0 && <p className="text-gray-500 text-center py-8">Aucune intervention</p>}
           {interventions.map(interv => (
             <Card key={interv.id} neon>
-              {/* En-tête avec date/heure badge */}
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <span className="inline-flex items-center gap-1 bg-dark-700 border border-dark-500 rounded-md px-2 py-0.5 text-xs text-gray-300 font-medium">
@@ -287,7 +361,6 @@ export function ClientDetailPage() {
                 </div>
               )}
 
-              {/* Badges cliquables */}
               <div className="flex flex-wrap gap-3 mt-2">
                 <div>
                   <p className="text-xs text-gray-600 mb-1">Facture</p>
@@ -325,11 +398,18 @@ export function ClientDetailPage() {
                 onChange={e => handlePhotoUpload(e, latestIntervention?.id)} />
               <Button onClick={() => fileRef.current?.click()} disabled={uploading} size="sm">
                 <Upload size={14} />
-                {uploading ? 'Envoi...' : 'Ajouter'}
+                {uploading ? 'Envoi...' : 'Ajouter une photo'}
               </Button>
             </div>
           </div>
-          {photos.length === 0 && <p className="text-gray-500 text-center py-8">Aucune photo</p>}
+
+          {photos.length === 0 && (
+            <div className="text-center py-12 text-gray-600">
+              <Upload size={32} className="mx-auto mb-3 opacity-30" />
+              <p>Aucune photo pour ce client</p>
+            </div>
+          )}
+
           {interventions.map(interv => {
             const intPhotos = photos.filter(p => p.intervention_id === interv.id)
             if (!intPhotos.length) return null
@@ -342,29 +422,148 @@ export function ClientDetailPage() {
                 </h3>
                 <div className="grid grid-cols-3 gap-2">
                   {intPhotos.map(photo => (
-                    <div key={photo.id} className="relative aspect-square" onClick={() => setLightbox(photo)}>
-                      <img src={photo.url} alt="" className="w-full h-full object-cover rounded-lg cursor-pointer" />
+                    <div key={photo.id} className="relative aspect-square group">
+                      <img
+                        src={photo.url} alt=""
+                        className="w-full h-full object-cover rounded-lg cursor-pointer"
+                        onClick={() => setLightbox(photo)}
+                      />
+                      {/* Badge type */}
                       <div className="absolute top-1 left-1">
-                        <Badge color={photo.type === 'avant' ? 'yellow' : 'green'}>
+                        <Badge color={photo.type === 'avant' ? 'yellow' : 'green'} className="text-[10px] px-1.5 py-0.5">
                           {photo.type === 'avant' ? 'AVANT' : 'APRÈS'}
                         </Badge>
                       </div>
+                      {/* Bouton supprimer */}
+                      <button
+                        onClick={e => { e.stopPropagation(); deletePhoto(photo) }}
+                        disabled={deletingPhoto === photo.id}
+                        className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full w-6 h-6
+                          flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
+                          disabled:opacity-50"
+                        title="Supprimer la photo"
+                      >
+                        {deletingPhoto === photo.id
+                          ? <span className="text-[10px]">...</span>
+                          : <X size={12} />
+                        }
+                      </button>
                     </div>
                   ))}
                 </div>
               </div>
             )
           })}
+
+          {/* Photos sans intervention associée */}
+          {photos.filter(p => !p.intervention_id).length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm text-gray-400 mb-2">Photos non associées</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {photos.filter(p => !p.intervention_id).map(photo => (
+                  <div key={photo.id} className="relative aspect-square group">
+                    <img
+                      src={photo.url} alt=""
+                      className="w-full h-full object-cover rounded-lg cursor-pointer"
+                      onClick={() => setLightbox(photo)}
+                    />
+                    <div className="absolute top-1 left-1">
+                      <Badge color={photo.type === 'avant' ? 'yellow' : 'green'} className="text-[10px] px-1.5 py-0.5">
+                        {photo.type === 'avant' ? 'AVANT' : 'APRÈS'}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); deletePhoto(photo) }}
+                      disabled={deletingPhoto === photo.id}
+                      className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white rounded-full w-6 h-6
+                        flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
+                        disabled:opacity-50"
+                      title="Supprimer la photo"
+                    >
+                      {deletingPhoto === photo.id ? <span className="text-[10px]">...</span> : <X size={12} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Lightbox */}
+      {/* ── Lightbox ── */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <button className="absolute top-4 right-4 text-white"><X size={24} /></button>
-          <img src={lightbox.url} alt="" className="max-w-full max-h-full rounded-lg" />
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 text-white hover:text-gray-300">
+            <X size={28} />
+          </button>
+          <img src={lightbox.url} alt="" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
+          <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-3">
+            <Badge color={lightbox.type === 'avant' ? 'yellow' : 'green'}>
+              {lightbox.type === 'avant' ? 'AVANT' : 'APRÈS'}
+            </Badge>
+            <button
+              onClick={e => { e.stopPropagation(); setLightbox(null); deletePhoto(lightbox) }}
+              className="flex items-center gap-1 bg-red-500/80 hover:bg-red-500 text-white text-xs rounded-full px-3 py-1 transition-colors">
+              <Trash2 size={12} /> Supprimer
+            </button>
+          </div>
         </div>
       )}
+
+      {/* ── Modal édition client ── */}
+      <Modal open={editClientOpen} onClose={() => setEditClientOpen(false)} title="Modifier le client" size="lg">
+        <div className="flex flex-col gap-4">
+          <Select label="Type de client" value={editClientForm.type_client}
+            onChange={e => setEditClientForm(f => ({ ...f, type_client: e.target.value }))}>
+            <option value="particulier">Particulier — TVA 10%</option>
+            <option value="pro">Professionnel — TVA 20%</option>
+          </Select>
+
+          {editClientForm.type_client === 'pro' ? (
+            <div className="flex items-center gap-2 bg-dark-700 rounded-lg p-3">
+              <Building2 size={16} className="text-accent flex-shrink-0 mt-5" />
+              <Input label="Nom de société *" value={editClientForm.nom_societe || ''}
+                onChange={e => setEditClientForm(f => ({ ...f, nom_societe: e.target.value }))}
+                className="flex-1" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Prénom" value={editClientForm.prenom || ''}
+                onChange={e => setEditClientForm(f => ({ ...f, prenom: e.target.value }))} />
+              <Input label="Nom" value={editClientForm.nom || ''}
+                onChange={e => setEditClientForm(f => ({ ...f, nom: e.target.value }))} />
+            </div>
+          )}
+
+          <Input label="Téléphone *" type="tel" value={editClientForm.telephone || ''}
+            onChange={e => setEditClientForm(f => ({ ...f, telephone: e.target.value }))} />
+
+          <Input label="Email" type="email" value={editClientForm.email || ''}
+            onChange={e => setEditClientForm(f => ({ ...f, email: e.target.value }))} />
+
+          <Input label="Adresse" value={editClientForm.adresse || ''}
+            onChange={e => setEditClientForm(f => ({ ...f, adresse: e.target.value }))} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Code postal" value={editClientForm.code_postal || ''}
+              onChange={e => setEditClientForm(f => ({ ...f, code_postal: e.target.value }))}
+              placeholder="75001" />
+            <Input label="Ville" value={editClientForm.ville || ''}
+              onChange={e => setEditClientForm(f => ({ ...f, ville: e.target.value }))}
+              placeholder="Paris" />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button onClick={() => setEditClientOpen(false)} variant="secondary" className="flex-1">
+              Annuler
+            </Button>
+            <Button onClick={saveEditClient} disabled={savingClient} className="flex-1">
+              {savingClient ? 'Sauvegarde...' : 'Enregistrer'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Modal édition intervention (admin) ── */}
       <Modal open={!!editInterv} onClose={() => setEditInterv(null)} title="Modifier l'intervention" size="lg">
@@ -398,14 +597,18 @@ export function ClientDetailPage() {
             </div>
 
             <div>
-              <label className="text-sm text-gray-400 block mb-1">Montant TTC (€)</label>
-              <input type="number" min="0" step="0.01" value={editForm.montant_ttc_saisi}
-                onChange={e => setEditForm(f => ({ ...f, montant_ttc_saisi: e.target.value }))}
+              <label className="text-sm text-gray-400 block mb-1">Montant HT (€)</label>
+              <input type="number" min="0" step="0.01" value={editForm.montant_ht_saisi}
+                onChange={e => setEditForm(f => ({ ...f, montant_ht_saisi: e.target.value }))}
                 className="w-full bg-dark-700 border border-dark-500 rounded-lg px-3 py-2.5 text-gray-200 text-lg font-bold
                   focus:outline-none focus:border-accent" />
-              {editForm.montant_ttc_saisi > 0 && (() => {
-                const c = calculerHT(parseFloat(editForm.montant_ttc_saisi), client.type_client)
-                return <p className="text-gray-500 text-xs mt-1">HT calculé : {c.montant_ht.toFixed(2)} € (TVA {c.tva_taux}%)</p>
+              {editForm.montant_ht_saisi > 0 && (() => {
+                const c = calculerTTC(parseFloat(editForm.montant_ht_saisi), client.type_client)
+                return (
+                  <p className="text-xs mt-1 neon-green font-medium">
+                    TTC : {c.montant_ttc.toFixed(2)} € (TVA {c.tva_taux}%)
+                  </p>
+                )
               })()}
             </div>
 
