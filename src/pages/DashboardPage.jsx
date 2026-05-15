@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { Card, MontantDisplay } from '../components/ui/Card'
 import { format, startOfDay, startOfWeek, startOfMonth, subDays } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { TrendingUp, Calendar, CreditCard, ChevronDown } from 'lucide-react'
+import { TrendingUp, Calendar, CreditCard, Package } from 'lucide-react'
 
 const PERIODES = [
   { label: "Aujourd'hui",    key: 'jour' },
@@ -64,8 +64,10 @@ export function DashboardPage() {
     setLoading(false)
   }
 
-  const totalTTC = interventions.reduce((a, b) => a + (b.montant_ttc || 0), 0)
-  const totalHT  = interventions.reduce((a, b) => a + (b.montant_ht  || 0), 0)
+  const totalTTC        = interventions.reduce((a, b) => a + (b.montant_ttc     || 0), 0)
+  const totalHT         = interventions.reduce((a, b) => a + (b.montant_ht      || 0), 0)
+  const totalFourniHT   = interventions.reduce((a, b) => a + (b.fourniture_ht   || 0), 0)
+  const totalFourniTTC  = interventions.reduce((a, b) => a + (b.fourniture_ttc  || 0), 0)
   const fmt = n => n?.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
 
   const labelRange = range
@@ -159,6 +161,30 @@ export function DashboardPage() {
             <span className="text-gray-400 text-sm">Nombre d'interventions</span>
             <span className="text-accent font-bold text-xl">{interventions.length}</span>
           </div>
+
+          {/* ── Fournitures ── */}
+          {totalFourniHT > 0 && (
+            <div className="bg-dark-800 neon-card rounded-xl p-4 mb-5">
+              <h2 className="font-semibold neon-blue mb-3 flex items-center gap-2">
+                <Package size={16} /> Coût fournitures
+              </h2>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-dark-700 rounded-lg px-3 py-3 flex flex-col items-center">
+                  <p className="text-gray-500 text-xs mb-1">Total HT</p>
+                  <p className="text-orange-400 font-bold text-lg leading-tight">{fmt(totalFourniHT)}</p>
+                  <p className="text-gray-600 text-xs mt-0.5">HT</p>
+                </div>
+                <div className="bg-dark-700 rounded-lg px-3 py-3 flex flex-col items-center">
+                  <p className="text-gray-500 text-xs mb-1">Total TTC</p>
+                  <p className="text-orange-400 font-bold text-lg leading-tight">{fmt(totalFourniTTC)}</p>
+                  <p className="text-gray-600 text-xs mt-0.5">TTC</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 mt-2 text-center">
+                {interventions.filter(i => i.fourniture_ht > 0).length} intervention{interventions.filter(i => i.fourniture_ht > 0).length > 1 ? 's' : ''} avec fournitures
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Par mode de paiement */}

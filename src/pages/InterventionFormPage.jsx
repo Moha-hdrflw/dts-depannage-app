@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { calculerTTC, TYPES_PANNE, DUREES, MODES_PAIEMENT } from '../lib/tarifs'
+import { calculerTTC, calculerTTCTaux, TYPES_PANNE, DUREES, MODES_PAIEMENT } from '../lib/tarifs'
 import { addToQueue } from '../lib/offlineQueue'
 import { Button } from '../components/ui/Button'
 import { Input, Select, Textarea } from '../components/ui/Input'
-import { ArrowLeft, Search, User, Upload, X, Building2, Calendar, Clock, WifiOff } from 'lucide-react'
+import { ArrowLeft, Search, User, Upload, X, Building2, Calendar, Clock, WifiOff, Package, FileText } from 'lucide-react'
 
 function todayStr() { return new Date().toISOString().split('T')[0] }
 function nowTimeStr() {
@@ -51,10 +51,24 @@ export function InterventionFormPage() {
   const [savedOffline, setSavedOffline] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
+  // ── Fournitures ──
+  const [fournitureHT, setFournitureHT] = useState('')
+  const [fournitureTva, setFournitureTva] = useState(10)
+
+  // ── Documents ──
+  const [devisFile, setDevisFile] = useState(null)
+  const [factureFile, setFactureFile] = useState(null)
+  const devisRef = useRef()
+  const factureRef = useRef()
+
   const typeClient = selectedClient?.type_client || clientForm.type_client
   const isPro = typeClient === 'pro'
   const htVal = parseFloat(form.montant_ht_saisi) || 0
   const calc = htVal > 0 ? calculerTTC(htVal, typeClient) : null
+
+  // Fourniture calc
+  const fournitureHTVal = parseFloat(fournitureHT) || 0
+  const fournitureCalc = fournitureHTVal > 0 ? calculerTTCTaux(fournitureHTVal, fournitureTva) : null
 
   const techNomComplet = [profile?.prenom, profile?.nom].filter(Boolean).join(' ') || profile?.email || ''
 
@@ -122,6 +136,9 @@ export function InterventionFormPage() {
       technicienId: profile.id,
       technicienNom: techNomComplet,
       calc,
+      fournitureHT:    fournitureHTVal > 0 ? fournitureHTVal : null,
+      fournitureTva:   fournitureHTVal > 0 ? fournitureTva : null,
+      fournitureTTC:   fournitureCalc?.montant_ttc || null,
     })
     setSavedOffline(true)
     setLoading(false)
@@ -158,6 +175,27 @@ export function InterventionFormPage() {
 
       const { montant_ht, tva_taux, montant_ttc } = calc || calculerTTC(htVal, typeClient)
 
+      // Upload documents si présents
+      let devis_url = null, facture_url = null
+      if (devisFile) {
+        const safeName = devisFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${clientId}/docs/${Date.now()}_devis_${safeName}`
+        const { error: upErr } = await supabase.storage.from('photos').upload(path, devisFile, { upsert: true })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path)
+          devis_url = urlData.publicUrl
+        }
+      }
+      if (factureFile) {
+        const safeName = factureFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const path = `${clientId}/docs/${Date.now()}_facture_${safeName}`
+        const { error: upErr } = await supabase.storage.from('photos').upload(path, factureFile, { upsert: true })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path)
+          facture_url = urlData.publicUrl
+        }
+      }
+
       const { data: intData, error: intErr } = await supabase.from('interventions').insert([{
         client_id:        clientId,
         technicien_id:    profile.id,
@@ -174,6 +212,11 @@ export function InterventionFormPage() {
         montant_ttc,
         mode_paiement:    form.mode_paiement,
         notes_technicien: form.notes_technicien,
+        fourniture_ht:    fournitureHTVal > 0 ? fournitureHTVal : null,
+        fourniture_tva_taux: fournitureHTVal > 0 ? fournitureTva : null,
+        fourniture_ttc:   fournitureCalc?.montant_ttc || null,
+        devis_url,
+        facture_url,
         facture_editee: false, facture_envoyee: false,
         sms_avis_envoye: false, sms_j1_envoye: false,
       }]).select().single()
@@ -427,6 +470,97 @@ export function InterventionFormPage() {
           <Select label="Mode de paiement" value={form.mode_paiement} onChange={e => setF('mode_paiement', e.target.value)}>
             {MODES_PAIEMENT.map(m => <option key={m} value={m}>{m}</option>)}
           </Select>
+        </div>
+
+        {/* ── BLOC FOURNITURES ── */}
+        <div className="bg-dark-800 neon-card rounded-xl p-4 flex flex-col gap-3">
+          <h2 className="font-semibold neon-blue flex items-center gap-2">
+            <Package size={16} /> Fournitures
+            <span className="text-xs text-gray-500 font-normal">(optionnel)</span>
+          </h2>
+
+          <div>
+            <label className="text-sm text-gray-400 block mb-1">
+              Coût fournitures HT (€)
+            </label>
+            <input type="number" min="0" step="0.01" value={fournitureHT}
+              onChange={e => setFournitureHT(e.target.value)} placeholder="0.00"
+              className="w-full bg-dark-700 border border-dark-500 rounded-lg px-3 py-2.5 text-gray-200 text-lg
+                placeholder-gray-600 focus:outline-none focus:border-accent" />
+          </div>
+
+          {fournitureHTVal > 0 && (
+            <>
+              <Select label="TVA fournitures" value={fournitureTva}
+                onChange={e => setFournitureTva(parseInt(e.target.value))}>
+                <option value={10}>TVA 10%</option>
+                <option value={20}>TVA 20%</option>
+              </Select>
+              <div className="bg-dark-700 rounded-lg px-3 py-2.5 flex items-center justify-between">
+                <span className="text-gray-500 text-sm">Fournitures TTC (TVA {fournitureTva}%)</span>
+                <span className="text-orange-400 font-bold text-lg">{fmtEuro(fournitureCalc?.montant_ttc)}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── BLOC DOCUMENTS ── */}
+        <div className="bg-dark-800 neon-card rounded-xl p-4 flex flex-col gap-3">
+          <h2 className="font-semibold neon-blue flex items-center gap-2">
+            <FileText size={16} /> Documents
+            <span className="text-xs text-gray-500 font-normal">(optionnel)</span>
+          </h2>
+
+          {!isOnline && (
+            <p className="text-yellow-400 text-xs flex items-center gap-1">
+              <WifiOff size={11} /> Documents non disponibles hors-ligne
+            </p>
+          )}
+
+          {isOnline && (
+            <>
+              <input ref={devisRef} type="file" accept=".pdf,.doc,.docx,image/*" className="hidden"
+                onChange={e => setDevisFile(e.target.files[0] || null)} />
+              <input ref={factureRef} type="file" accept=".pdf,.doc,.docx,image/*" className="hidden"
+                onChange={e => setFactureFile(e.target.files[0] || null)} />
+
+              {/* Devis */}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => devisRef.current?.click()}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm transition-colors
+                    ${devisFile
+                      ? 'border-accent/50 bg-accent/5 text-accent'
+                      : 'border-dark-500 bg-dark-700 text-gray-400 hover:border-accent/30 hover:text-gray-300'}`}>
+                  <FileText size={14} />
+                  <span className="truncate">{devisFile ? devisFile.name : 'Ajouter un devis…'}</span>
+                </button>
+                {devisFile && (
+                  <button type="button" onClick={() => setDevisFile(null)}
+                    className="text-gray-500 hover:text-red-400 transition-colors flex-shrink-0">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+
+              {/* Facture */}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => factureRef.current?.click()}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm transition-colors
+                    ${factureFile
+                      ? 'border-accent/50 bg-accent/5 text-accent'
+                      : 'border-dark-500 bg-dark-700 text-gray-400 hover:border-accent/30 hover:text-gray-300'}`}>
+                  <FileText size={14} />
+                  <span className="truncate">{factureFile ? factureFile.name : 'Ajouter une facture…'}</span>
+                </button>
+                {factureFile && (
+                  <button type="button" onClick={() => setFactureFile(null)}
+                    className="text-gray-500 hover:text-red-400 transition-colors flex-shrink-0">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── BLOC PHOTOS ── */}

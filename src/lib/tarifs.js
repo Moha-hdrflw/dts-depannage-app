@@ -4,7 +4,7 @@ export const TVA = {
 }
 
 export const TYPES_PANNE = [
-  'Panne générale',
+  'Panne générale - Diagnostic',
   'Disjoncteur sauté',
   'Tableau électrique',
   'Prises & éclairage',
@@ -36,12 +36,22 @@ export function calculerTTC(ht, type_client) {
   }
 }
 
+/** Calcule TTC à partir d'un taux direct (10 ou 20) */
+export function calculerTTCTaux(ht, taux) {
+  const ttc = ht * (1 + taux / 100)
+  return {
+    montant_ht:  Math.round(ht  * 100) / 100,
+    tva_taux:    taux,
+    montant_ttc: Math.round(ttc * 100) / 100,
+  }
+}
+
 export function fmtEuro(n) {
   if (n == null || isNaN(n)) return '—'
   return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
 }
 
-/** "14:30" → "14h30" · "00:05" → "00h05" · distingue minuit / midi */
+/** "14:30" → "14h30" · "00:05" → "00h05" */
 export function fmtHeure(h) {
   if (!h) return ''
   const [hh, mm] = h.split(':')

@@ -7,10 +7,10 @@ import { Button } from '../components/ui/Button'
 import { Card, MontantDisplay } from '../components/ui/Card'
 import { Modal } from '../components/ui/Modal'
 import { Input, Select, Textarea } from '../components/ui/Input'
-import { ArrowLeft, Plus, Upload, X, Pencil, Trash2, Clock, UserPen, Building2 } from 'lucide-react'
+import { ArrowLeft, Plus, Upload, X, Pencil, Trash2, Clock, UserPen, Building2, Package, FileText, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { calculerHT, calculerTTC, TYPES_PANNE, DUREES, MODES_PAIEMENT, fmtHeure } from '../lib/tarifs'
+import { calculerHT, calculerTTC, calculerTTCTaux, TYPES_PANNE, DUREES, MODES_PAIEMENT, fmtHeure, fmtEuro } from '../lib/tarifs'
 
 const TABS = ['Interventions', 'Notes & Facturation', 'Photos']
 
@@ -40,6 +40,13 @@ export function ClientDetailPage() {
 
   // Delete photo
   const [deletingPhoto, setDeletingPhoto] = useState(null)
+
+  // Docs upload (edit modal)
+  const editDevisRef = useRef()
+  const editFactureRef = useRef()
+  const [editDevisFile, setEditDevisFile] = useState(null)
+  const [editFactureFile, setEditFactureFile] = useState(null)
+  const [uploadingDoc, setUploadingDoc] = useState(false)
 
   useEffect(() => { loadAll() }, [id])
 
@@ -144,14 +151,20 @@ export function ClientDetailPage() {
   // ── Édition intervention (admin) ──
   function openEdit(interv) {
     setEditInterv(interv)
+    setEditDevisFile(null)
+    setEditFactureFile(null)
     setEditForm({
-      type_panne:       interv.type_panne,
-      type_panne_autre: interv.type_panne_autre || '',
-      creneau:          interv.creneau,
-      duree_heures:     interv.duree_heures || 1,
-      montant_ht_saisi: interv.montant_ht || '',
-      mode_paiement:    interv.mode_paiement,
-      notes_technicien: interv.notes_technicien || '',
+      type_panne:          interv.type_panne,
+      type_panne_autre:    interv.type_panne_autre || '',
+      creneau:             interv.creneau,
+      duree_heures:        interv.duree_heures || 1,
+      montant_ht_saisi:    interv.montant_ht || '',
+      mode_paiement:       interv.mode_paiement,
+      notes_technicien:    interv.notes_technicien || '',
+      fourniture_ht_saisi: interv.fourniture_ht || '',
+      fourniture_tva_taux: interv.fourniture_tva_taux || 10,
+      devis_url:           interv.devis_url || '',
+      facture_url:         interv.facture_url || '',
     })
   }
 
@@ -159,16 +172,48 @@ export function ClientDetailPage() {
     setSaving(true)
     const htVal = parseFloat(editForm.montant_ht_saisi) || 0
     const { montant_ht, tva_taux, montant_ttc } = calculerTTC(htVal, client.type_client)
+    const fourniHTVal = parseFloat(editForm.fourniture_ht_saisi) || 0
+    const fourniCalc = fourniHTVal > 0 ? calculerTTCTaux(fourniHTVal, parseInt(editForm.fourniture_tva_taux)) : null
+
+    // Upload nouveaux documents si sélectionnés
+    let devis_url = editForm.devis_url || null
+    let facture_url = editForm.facture_url || null
+    setUploadingDoc(true)
+    if (editDevisFile) {
+      const safeName = editDevisFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${editInterv.client_id}/docs/${Date.now()}_devis_${safeName}`
+      const { error: upErr } = await supabase.storage.from('photos').upload(path, editDevisFile, { upsert: true })
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path)
+        devis_url = urlData.publicUrl
+      }
+    }
+    if (editFactureFile) {
+      const safeName = editFactureFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${editInterv.client_id}/docs/${Date.now()}_facture_${safeName}`
+      const { error: upErr } = await supabase.storage.from('photos').upload(path, editFactureFile, { upsert: true })
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path)
+        facture_url = urlData.publicUrl
+      }
+    }
+    setUploadingDoc(false)
+
     const updates = {
-      type_panne:       editForm.type_panne,
-      type_panne_autre: editForm.type_panne === 'Autre' ? editForm.type_panne_autre : null,
-      creneau:          editForm.creneau,
-      duree_heures:     parseFloat(editForm.duree_heures),
+      type_panne:          editForm.type_panne,
+      type_panne_autre:    editForm.type_panne === 'Autre' ? editForm.type_panne_autre : null,
+      creneau:             editForm.creneau,
+      duree_heures:        parseFloat(editForm.duree_heures),
       montant_ht,
       tva_taux,
       montant_ttc,
-      mode_paiement:    editForm.mode_paiement,
-      notes_technicien: editForm.notes_technicien,
+      mode_paiement:       editForm.mode_paiement,
+      notes_technicien:    editForm.notes_technicien,
+      fourniture_ht:       fourniHTVal > 0 ? fourniHTVal : null,
+      fourniture_tva_taux: fourniHTVal > 0 ? parseInt(editForm.fourniture_tva_taux) : null,
+      fourniture_ttc:      fourniCalc?.montant_ttc || null,
+      devis_url,
+      facture_url,
     }
     await supabase.from('interventions').update(updates).eq('id', editInterv.id)
     setInterventions(prev => prev.map(i => i.id === editInterv.id ? { ...i, ...updates } : i))
@@ -308,6 +353,28 @@ export function ClientDetailPage() {
                     {interv.type_panne === 'Autre' ? interv.type_panne_autre : interv.type_panne}
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">{interv.technicien_nom}</div>
+                  {/* Fournitures */}
+                  {interv.fourniture_ttc > 0 && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Package size={11} className="text-orange-400" />
+                      <span className="text-xs text-orange-400">Fournitures : {fmtEuro(interv.fourniture_ttc)} TTC</span>
+                    </div>
+                  )}
+                  {/* Documents */}
+                  <div className="flex gap-2 mt-1 flex-wrap">
+                    {interv.devis_url && (
+                      <a href={interv.devis_url} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                        <FileText size={11} /> Devis <ExternalLink size={9} />
+                      </a>
+                    )}
+                    {interv.facture_url && (
+                      <a href={interv.facture_url} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors">
+                        <FileText size={11} /> Facture <ExternalLink size={9} />
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 ml-2">
                   <MontantDisplay ttc={interv.montant_ttc} ht={interv.montant_ht} size="md" />
@@ -620,10 +687,82 @@ export function ClientDetailPage() {
             <Textarea label="Notes technicien" value={editForm.notes_technicien}
               onChange={e => setEditForm(f => ({ ...f, notes_technicien: e.target.value }))} rows={3} />
 
+            {/* ── Fournitures ── */}
+            <div className="border-t border-dark-600 pt-3">
+              <p className="text-sm text-gray-400 mb-2 flex items-center gap-1.5"><Package size={14} /> Fournitures</p>
+              <Input label="Coût HT (€)" type="number" min="0" step="0.01"
+                value={editForm.fourniture_ht_saisi}
+                onChange={e => setEditForm(f => ({ ...f, fourniture_ht_saisi: e.target.value }))}
+                placeholder="0.00" />
+              {parseFloat(editForm.fourniture_ht_saisi) > 0 && (
+                <>
+                  <div className="mt-2">
+                    <Select label="TVA fournitures" value={editForm.fourniture_tva_taux}
+                      onChange={e => setEditForm(f => ({ ...f, fourniture_tva_taux: parseInt(e.target.value) }))}>
+                      <option value={10}>TVA 10%</option>
+                      <option value={20}>TVA 20%</option>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-orange-400 mt-1">
+                    TTC : {fmtEuro(calculerTTCTaux(parseFloat(editForm.fourniture_ht_saisi), parseInt(editForm.fourniture_tva_taux)).montant_ttc)}
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* ── Documents ── */}
+            <div className="border-t border-dark-600 pt-3">
+              <p className="text-sm text-gray-400 mb-2 flex items-center gap-1.5"><FileText size={14} /> Documents</p>
+              <input ref={editDevisRef} type="file" accept=".pdf,.doc,.docx,image/*" className="hidden"
+                onChange={e => setEditDevisFile(e.target.files[0] || null)} />
+              <input ref={editFactureRef} type="file" accept=".pdf,.doc,.docx,image/*" className="hidden"
+                onChange={e => setEditFactureFile(e.target.files[0] || null)} />
+
+              {/* Devis */}
+              <div className="flex items-center gap-2 mb-2">
+                <button type="button" onClick={() => editDevisRef.current?.click()}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors
+                    ${editDevisFile ? 'border-accent/50 bg-accent/5 text-accent' : 'border-dark-500 bg-dark-700 text-gray-400 hover:border-accent/30'}`}>
+                  <FileText size={13} />
+                  <span className="truncate">{editDevisFile ? editDevisFile.name : editForm.devis_url ? 'Remplacer le devis' : 'Ajouter un devis…'}</span>
+                </button>
+                {editForm.devis_url && (
+                  <a href={editForm.devis_url} target="_blank" rel="noreferrer"
+                    className="text-blue-400 hover:text-blue-300 flex-shrink-0" title="Voir le devis">
+                    <ExternalLink size={15} />
+                  </a>
+                )}
+                {(editDevisFile || editForm.devis_url) && (
+                  <button type="button" onClick={() => { setEditDevisFile(null); setEditForm(f => ({ ...f, devis_url: '' })) }}
+                    className="text-gray-500 hover:text-red-400 flex-shrink-0"><X size={15} /></button>
+                )}
+              </div>
+
+              {/* Facture */}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => editFactureRef.current?.click()}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors
+                    ${editFactureFile ? 'border-accent/50 bg-accent/5 text-accent' : 'border-dark-500 bg-dark-700 text-gray-400 hover:border-accent/30'}`}>
+                  <FileText size={13} />
+                  <span className="truncate">{editFactureFile ? editFactureFile.name : editForm.facture_url ? 'Remplacer la facture' : 'Ajouter une facture…'}</span>
+                </button>
+                {editForm.facture_url && (
+                  <a href={editForm.facture_url} target="_blank" rel="noreferrer"
+                    className="text-accent hover:text-accent/80 flex-shrink-0" title="Voir la facture">
+                    <ExternalLink size={15} />
+                  </a>
+                )}
+                {(editFactureFile || editForm.facture_url) && (
+                  <button type="button" onClick={() => { setEditFactureFile(null); setEditForm(f => ({ ...f, facture_url: '' })) }}
+                    className="text-gray-500 hover:text-red-400 flex-shrink-0"><X size={15} /></button>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-2">
               <Button onClick={() => setEditInterv(null)} variant="secondary" className="flex-1">Annuler</Button>
-              <Button onClick={saveEdit} disabled={saving} className="flex-1">
-                {saving ? 'Sauvegarde...' : 'Enregistrer'}
+              <Button onClick={saveEdit} disabled={saving || uploadingDoc} className="flex-1">
+                {uploadingDoc ? 'Upload...' : saving ? 'Sauvegarde...' : 'Enregistrer'}
               </Button>
             </div>
           </div>
